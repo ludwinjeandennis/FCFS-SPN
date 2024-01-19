@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SRT Scheduler</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      margin: 20px;
+    }
+
+    h1 {
+      text-align: center;
+    }
+
+    label {
+      font-weight: bold;
+    }
+
+    input {
+      margin-bottom: 10px;
+    }
+
+    button {
+      padding: 5px 10px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #45a049;
+    }
+
+    #processInfo, #processChart, #processQueue {
+      margin-top: 20px;
+    }
+
+    #processInfo p {
+      margin: 5px 0;
+    }
+
+    #processTable {
+    width: 80%;
+    margin: 20px auto;
+    border-collapse: collapse;
+  }
+
+  #processTable th, #processTable td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: center;
+  }
+
+  #processTable th {
+    background-color: #4CAF50;
+    color: white;
+  }
+
+  #processTable tr:nth-child(even) {
+    background-color: #f2f2f2;
+  }
+
+  #processTable tr:hover {
+    background-color: #ddd;
+  }
+  </style>
+</head>
+<body>
+  <h1>SRT Scheduler</h1>
+  <label for="numProcesses">Número de Procesos:</label>
+  <input type="number" id="numProcesses">
+  <button onclick="submitProcesses()">Enviar Procesos</button>
+  <button onclick="restartSimulation()">Reiniciar Simulación</button>
+
+  <div id="processInfo"></div>
+  <canvas id="processChart" width="800" height="400"></canvas>
+  <div id="processQueue"></div>
+  <table id="processTable" style="margin-top: 20px;">
+    <thead>
+      <tr>
+        <th>Proceso</th>
+        <th>Tiempo de Llegada</th>
+        <th>Tiempo de Ejecución</th>
+        <th>Tiempo de Retorno</th>
+        <th>Tiempo de Espera</th>
+      </tr>
+    </thead>
+    <tbody id="processTableBody"></tbody>
+  </table>
+  <script>
+    let processes = [];
+    let chart;
+    let processInfoDiv;
+    let processQueueDiv;
+
+    function submitProcesses() {
+      const numProcesses = parseInt(document.getElementById('numProcesses').value);
+      processes = [];
+
+      for (let i = 0; i < numProcesses; i++) {
+        const arrivalTime = parseInt(prompt(`Tiempo de llegada del proceso ${i + 1}:`));
+        const executionTime = parseInt(prompt(`Tiempo de ejecución del proceso ${i + 1}:`));
+
+        processes.push({ id: i + 1, arrivalTime, executionTime, remainingTime: executionTime });
+      }
+
+      processes.sort((a, b) => a.arrivalTime - b.arrivalTime);
+
+      chart = createChart();
+      processInfoDiv = document.getElementById('processInfo');
+      processQueueDiv = document.getElementById('processQueue');
+
+      runSRT();
+    }
+
+    function createChart() {
+      const chartData = { labels: [], datasets: [] };
+      const colors = ['red', 'blue', 'green', 'orange', 'purple'];
+
+      processes.forEach((process, index) => {
+        chartData.datasets.push({
+          label: `Proceso ${process.id}`,
+          data: [{ x: process.arrivalTime, y: index + 1 }],
+          borderColor: colors[index],
+          borderWidth: 2,
+          fill: false
+        });
+      });
+
+      const ctx = document.getElementById('processChart').getContext('2d');
+      return new Chart(ctx, {
+        type: 'line',
+        data: chartData,
+        options: {
+          scales: {
+            x: { type: 'linear', position: 'bottom' },
+            y: { type: 'linear', position: 'left' }
+          }
+        }
+      });
+    }
+
+    function runSRT() {
+  processInfoDiv.innerHTML = '<h2>Información detallada:</h2>';
+  processQueueDiv.innerHTML = '<h2>Cola de Procesos:</h2>';
+
+  let currentTime = 0;
+  let completedProcesses = 0;
+
+  let completionTimes = Array(processes.length).fill(0);
+  let turnaroundTimes = Array(processes.length).fill(0);
+  let waitingTimes = Array(processes.length).fill(0);
+
+  while (completedProcesses < processes.length) {
+    let availableProcesses = processes.filter(process => process.arrivalTime <= currentTime && process.remainingTime > 0);
+    availableProcesses.sort((a, b) => a.remainingTime - b.remainingTime || a.arrivalTime - b.arrivalTime);
+
+    if (availableProcesses.length === 0) {
+      currentTime++;
+    } else {
+      const selectedProcess = availableProcesses[0];
+      selectedProcess.remainingTime--;
+
+      chart.data.datasets[processes.indexOf(selectedProcess)].data.push({ x: currentTime, y: processes.indexOf(selectedProcess) + 1 });
+      chart.update();
+
+      currentTime++;
+      processInfoDiv.innerHTML += `<p>Tiempo ${currentTime}: Proceso ${selectedProcess.id}</p>`;
+
+      if (selectedProcess.remainingTime === 0) {
+        completedProcesses++;
+
+        const completionTime = currentTime;
+        const turnaroundTime = completionTime - selectedProcess.arrivalTime;
+        const waitingTime = turnaroundTime - selectedProcess.executionTime;
+
+        completionTimes[processes.indexOf(selectedProcess)] = completionTime;
+        turnaroundTimes[processes.indexOf(selectedProcess)] = turnaroundTime;
+        waitingTimes[processes.indexOf(selectedProcess)] = waitingTime;
+
+        updateProcessQueue(currentTime);
+      }
+    }
+  }
+  displayTable(completionTimes, turnaroundTimes, waitingTimes);
+}
+
+
+    function updateProcessQueue(currentTime) {
+      const queue = processes
+        .filter(process => process.arrivalTime <= currentTime && process.remainingTime > 0)
+        .sort((a, b) => a.remainingTime - b.remainingTime || a.arrivalTime - b.arrivalTime);
+
+      processQueueDiv.innerHTML += `<p>Tiempo ${currentTime}: ${queue.map(process => `P${process.id}`).join(', ')}</p>`;
+    }
+
+    function restartSimulation() {
+      document.getElementById('numProcesses').value = '';
+      processes = [];
+      if (chart) {
+        chart.destroy();
+      }
+      processInfoDiv.innerHTML = '';
+      processQueueDiv.innerHTML = '';
+    }
+
+    function displayTable(completionTimes, turnaroundTimes, waitingTimes) {
+      const tableBody = document.getElementById('processTableBody');
+      tableBody.innerHTML = '';
+
+      processes.forEach((process, index) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${process.id}</td>
+          <td>${process.arrivalTime}</td>
+          <td>${process.executionTime}</td>
+          <td>${completionTimes[index]}</td>
+          <td>${waitingTimes[index]}</td>
+        `;
+        tableBody.appendChild(row);
+      });
+    }
+  </script>
+</body>
+</html>
